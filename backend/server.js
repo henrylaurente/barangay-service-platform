@@ -10,12 +10,27 @@ const app = express();
 
 // Security middleware
 app.use(helmet());
-app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:3000', credentials: true }));
+app.use(cors({ origin: process.env.CORS_ORIGIN, credentials: true }));
+
+// Stricter rate limit for auth endpoints
+const authLimiter = rateLimit({
+  max: 10,
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Global rate limit
 app.use(rateLimit({ max: 100, windowMs: 15 * 60 * 1000 }));
+
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 app.use(cookieParser());
 app.use(morgan('combined'));
+
+// Apply auth limiter to login and register BEFORE auth router
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
 
 // API routes
 app.use('/api/auth', require('./routes/auth'));

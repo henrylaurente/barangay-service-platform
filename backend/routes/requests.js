@@ -3,24 +3,11 @@ const router = express.Router();
 const { body, param, validationResult } = require('express-validator');
 const authMiddleware = require('../middleware/auth.middleware');
 const authorize = authMiddleware.authorize;
-const mysql = require('mysql2/promise');
 const crypto = require('crypto');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-
-const pool = {
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 3306,
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'barangay_db',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
-};
-
-const poolConnection = mysql.createPool(pool);
+const poolConnection = require('../config/db');
 
 // Multer configuration for secure file uploads
 const uploadDir = 'uploads/requests';
@@ -783,14 +770,21 @@ router.get(
     try {
       const { id } = req.params;
 
-      const [rows] = await executeQuery(
-        `SELECT tsh.*, u.full_name as changed_by_name, u.role as changed_by_role 
-         FROM request_status_history tsh
-         LEFT JOIN users u ON tsh.changed_by = u.id
-         WHERE tsh.request_id = ?
-         ORDER BY tsh.changed_at ASC`,
-        [id]
-      );
+      let query = `
+        SELECT tsh.*, u.full_name as changed_by_name, u.role as changed_by_role 
+        FROM request_status_history tsh
+        LEFT JOIN users u ON tsh.changed_by = u.id
+        INNER JOIN requests r ON tsh.request_id = r.id
+        WHERE tsh.request_id = ?`;
+      const params = [id];
+
+      if (req.user.role === 'resident') {
+        query += ' AND r.resident_id = ?';
+        params.push(req.user.id);
+      }
+      // staff and admin can view all timelines (no extra condition)
+
+      const [rows] = await executeQuery(query, params);
 
       return res.json({
         success: true,

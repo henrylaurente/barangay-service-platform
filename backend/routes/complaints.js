@@ -3,21 +3,8 @@ const router = express.Router();
 const { body, param, validationResult } = require('express-validator');
 const authMiddleware = require('../middleware/auth.middleware');
 const authorize = authMiddleware.authorize;
-const mysql = require('mysql2/promise');
 const crypto = require('crypto');
-
-const pool = {
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 3306,
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'barangay_db',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
-};
-
-const poolConnection = mysql.createPool(pool);
+const poolConnection = require('../config/db');
 
 async function executeQuery(query, params = []) {
   const [results] = await poolConnection.execute(query, params);
@@ -311,7 +298,8 @@ router.put(
   authMiddleware.authMiddleware,
   authorize('staff', 'admin'),
   [
-    param('id').isInt({ min: 1 }).withMessage('Valid complaint ID is required'),
+    // SECURITY FIX: Complaint IDs are strings like "COMPLAINT-..."
+    param('id').isString().notEmpty().withMessage('Valid complaint ID is required'),
     body('new_status')
       .isIn(['OPEN', 'INVESTIGATING', 'RESOLVED', 'CLOSED'])
       .withMessage('Invalid complaint status'),
@@ -338,7 +326,7 @@ router.put(
       const changerId = req.user.id;
 
       // Check if complaint exists
-      const [complaintRows] = await executeQuery('SELECT id, title, status FROM complaints WHERE id = ?', [id]);
+      const [complaintRows] = await executeQuery('SELECT id, title, status, resident_id FROM complaints WHERE id = ?', [id]);
       if (complaintRows.length === 0) {
         return res.status(404).json({
           success: false,

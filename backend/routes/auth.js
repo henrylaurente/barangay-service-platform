@@ -3,21 +3,9 @@ const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const mysql = require('mysql2/promise');
 const crypto = require('crypto');
-
-const pool = {
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 3306,
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'barangay_db',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
-};
-
-const poolConnection = mysql.createPool(pool);
+const { authMiddleware } = require('../middleware/auth.middleware.js');
+const poolConnection = require('../config/db');
 
 async function executeQuery(query, params = []) {
   const [results] = await poolConnection.execute(query, params);
@@ -44,17 +32,18 @@ router.post(
         return true;
       }),
     body('password')
-      .isLength({ min: 6 })
-      .withMessage('Password must be at least 6 characters long')
+      .isLength({ min: 8 })
+      .withMessage('Password must be at least 8 characters long')
       .matches(/[A-Z]/)
       .withMessage('Password must contain at least one uppercase letter')
       .matches(/[a-z]/)
       .withMessage('Password must contain at least one lowercase letter')
       .matches(/[0-9]/)
       .withMessage('Password must contain at least one number'),
+    // SECURITY FIX: Restrict public registration to resident role only
     body('role')
-      .isIn(['resident', 'staff', 'admin'])
-      .withMessage('Role must be resident, staff, or admin'),
+      .isIn(['resident'])
+      .withMessage('Role must be resident'),
     body('fullName')
       .trim()
       .notEmpty()
@@ -124,6 +113,14 @@ router.post(
         { expiresIn: '30d' }
       );
 
+      // SECURITY FIX: Set refresh token as HttpOnly cookie
+      res.cookie('refreshToken', refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+      });
+
       return res.status(201).json({
         success: true,
         message: 'Account registered successfully',
@@ -133,8 +130,8 @@ router.post(
             email,
             role
           },
-          token,
-          refreshToken
+          token
+          // refreshToken removed from body
         }
       });
     } catch (error) {
@@ -212,6 +209,14 @@ router.post(
         { expiresIn: '30d' }
       );
 
+      // SECURITY FIX: Set refresh token as HttpOnly cookie
+      res.cookie('refreshToken', refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+      });
+
       return res.json({
         success: true,
         message: 'Login successful',
@@ -221,8 +226,8 @@ router.post(
             email: user.email,
             role: user.role
           },
-          token,
-          refreshToken
+          token
+          // refreshToken removed from body
         }
       });
     } catch (error) {
@@ -241,7 +246,7 @@ router.post(
  * @desc    Get current user profile
  * @access  Private
  */
-router.get('/me', async (req, res) => {
+router.get('/me', authMiddleware, async (req, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({
@@ -301,7 +306,16 @@ router.get('/me', async (req, res) => {
  * @desc    Logout user
  * @access  Private
  */
-router.post('/logout', async (req, res) => {
+router.post('/logout', authMiddleware, async (req, res) => {
+  // Clear the refresh token cookie
+  res.clearCookie('refreshToken', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict'
+  });
+
+  // Optional: add token to blacklist (not implemented here)
+
   res.json({
     success: true,
     message: 'Logout successful'

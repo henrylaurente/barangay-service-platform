@@ -1,21 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const mysql = require('mysql2/promise');
 const authMiddleware = require('../middleware/auth.middleware');
 const authorize = authMiddleware.authorize;
-
-const pool = {
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 3306,
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'barangay_db',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
-};
-
-const poolConnection = mysql.createPool(pool);
+const poolConnection = require('../config/db');
 
 /**
  * Helper: Execute query
